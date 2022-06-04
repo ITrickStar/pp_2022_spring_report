@@ -1,0 +1,1158 @@
+\documentclass{report}
+
+\usepackage[english, russian]{babel}
+\usepackage[warn]{mathtext}
+\usepackage[utf8]{luainputenc}
+\usepackage[T2A]{fontenc}
+\usepackage[pdftex]{hyperref}
+\usepackage[12pt]{extsizes}
+\usepackage{listings}
+\usepackage{geometry}
+\usepackage{color}
+\usepackage{enumitem}
+\usepackage{multirow}
+\usepackage{graphicx}
+\usepackage{indentfirst}
+\usepackage{amsmath}
+\usepackage{hyphenat}
+
+\geometry{a4paper, top=2cm, bottom=2cm, left=2.5cm, right=1.5cm}
+
+\setlength{\parskip}{0.5cm}
+\setlist{nolistsep, itemsep=0.3cm, parsep=0pt}
+\lstset{language=C++,
+        basicstyle=\footnotesize,
+        keywordstyle=\color{blue}\ttfamily,
+        stringstyle=\color{red}\ttfamily,
+        commentstyle=\color{green}\ttfamily,
+        morecomment=[l][\color{magenta}]{\#},
+        tabsize=4,
+        breaklines=true,
+        breakatwhitespace=true,
+        title=\lstname}
+
+\begin{document}
+\begin{titlepage}
+\begin{center}
+    Министерство образования и науки Российской Федерации \\
+    Федеральное государственное автономное образовательное учреждение высшего образования
+\end{center}
+\begin{center}
+    \textbf{<<Национальный исследовательский\\Нижегородский государственный университет им. Н.И. Лобачевского>>} \\
+\end{center}
+\begin{center}
+    \textbf{Институт информационных технологий, математики и механики}\\
+\end{center}
+
+\vspace{4em}
+
+\begin{center}
+    \textbf{\Large Отчет по лабораторной работе} \\
+\end{center}
+
+\begin{center}
+    \textbf{\Large Тема:} \\
+    \vspace{1em}
+    \textbf{\large «Умножение разреженных матриц. Элементы типа double. Формат хранения матрицы – столбцовый (CCS).»}
+\end{center}
+
+\vspace{4em}
+
+\begin{flushright}
+\begin{minipage}{0.4\textwidth}
+\begin{flushleft}
+
+\textbf{Выполнил:} \\
+студент группы 381906-3 \\
+Михеев И.А. \\
+
+\vspace
+
+\textbf{Проверил:} \\
+доцент кафедры МОСТ, \\
+кандидат технических наук \\
+Сысоев А.В. \\
+\end{flushleft}
+\end{minipage}
+\end{flushright}
+\vspace{\fill}
+\begin{center}
+Нижний Новгород \\
+2022
+\end{center}
+\end{titlepage}
+
+\setcounter{page}{2}
+\tableofcontents
+\newpage
+
+\section*{Введение}
+\addcontentsline{toc}{section}{Введение}
+\parПо сравнению с привычными нам плотными матрицами, где большинство значений отличны от нуля, разреженные матрицы, о которых пойдет речь в данной лабораторной работе, наоборот содержат в основном нулевые значения. Особенность данной формулировки заключается в отсутствии четкого понимания, какое именно количество ненулевых элементов делает матрицу разреженной. Обычно говорят, что матрица разрежена, если она содержит не более $\mathbb{O(n)}$ отличных от нуля элементов. В противном случае матрица считается плотной. Типичным случаем разреженности является ограниченность числа ненулевых элементов в одной строке.
+\parИспользование разреженных матриц широко распространены в научных и инженерных областях, например, в программах и алгоритмах, где используются данные, которые содержат счетчики, кодировки, также их использование можно найти во многих подполях машинного обучения.
+\parВ вычислительном отношении неразумно работать с разреженными матрицами, как с плотными, хотя и при правильной реализации алгоритмов в обоих случаях будут получены правильные результаты, но использование специализированных способов представления и обработки матриц можно добиться значительного прироста производительности. Существует много по-своему эффективных форматов хранения и обработки разреженных, однако в рамках данной работы рассматривается лишь один из таких способов — столбцовый метод хранения матрицы CCS. Для анализа временной сложности таких вычислений будут использоваться два типа технологии разработки параллельных программ в системах с общей памятью.
+\newpage
+
+\section*{Постановка задачи}
+\addcontentsline{toc}{section}{Постановка задачи}
+\parЦелью данной лабораторной состоит изучении CCS метода хранения разреженной матрицы и модифицированных под данный формат алгоритмов для работы с ней. В рамках данной работы требовалось реализовать последовательную и параллельные версии умножения разреженных матриц. В качестве методов создания параллельной программы использовались технология OpenMP и библиотеки Intel Thread Building Blocks (TBB). Для того чтобы оценить эффективность и правильность данного решения, необходимо также провести сравнение производительности вычислений относительно скорости работы программы между последовательным и параллельным алгоритмами. Для  проведения тестирования использовалась библиотека тестирования программ Google Test.
+\newpage
+
+\section*{Описание алгоритма}
+\addcontentsline{toc}{section}{Описание алгоритма}
+\parДля хранения разреженных матриц формата CSS реализуем класс со следующими переменными класса:
+
+\begin{enumerate}
+    \item Размерность матрицы - dim.
+    \item Массив ненулевых значений матрицы - val.
+    \item Массив индексов строк, хранящих ненулевые элементы матрицы - rows.
+    \item Массив номеров позиций, с которых начинается описание очередной строки - ptr.
+\end{enumerate}
+
+Предполагается, что матрица квадратная и размерность dim можно задать одним значением. Для лучшего понимания метода приведем пример. Пусть нам дана следующая разреженная матрица 4x4:
+
+\begin{flushleft}
+$\begin{pmatrix}
+    $0$ & $2$ & $0$ & $0$\\
+    $4$ & $0$ & $1$ & $0$\\
+    $0$ & $0$ & $-1$ & $0$\\
+    $0$ & $0$ & $0$ & $3$\\
+\end{pmatrix}$
+\quad val = \{4, 2, 1, -1, 3\}
+\quad rows = \{2, 1, 2, 3, 4\}
+\quad ptr = \{1, 2, 3, 5, 6\}
+\end{flushleft}
+
+Поля класса имеют следующие особенности:
+
+\begin{itemize}
+\item Значения rows упорядочены по столбцам и находятся в порядке возрастания в пределах столбца.
+\item Последовательность элементов ptr неубывающая, а последний элемент равен n+1, где n - число ненулевых значений разреженной матрицы.
+\end{itemize}
+
+\parНаконец перейдем к рассмотрению операции умножения разреженных матриц. Для того чтобы перемножить две матрицы необходимо последовательно умножать строки одной матрицы на стобцы другой. Использование столбцового метода хранения матрицы, не подразумевает хранение матрицы целиком, что не позволяет пройтись вдоль каждой строки и столбца поэлементно, поэтому стандартный алгоритм умножения матриц нам не подходит.
+\parПервая проблема с которой мы сталкиваемся — это необходимость получить доступ к векторам матриц. Формат хранения CCS подразумевает прямое получение значений и позиций элементов вдоль столбца. Но чтобы получить значения всего одной из строк необходимо получить позицию каждого элемента из массива ptr. Одним из простых, но в то же время эффективных решений этой проблемы является транспонирование заданной матрицы. Заранее транспонировав одну из матриц, мы будем перемножать уже столбцы на столбцы, что даст нам прирост в скорости работы алгоритма.
+\parВторая проблема состоит в сложности нахождения пары пересечения элементов векторов, которые необходимо умножить. Так как мы не храним вектор целиком, то нам необходимо выделить дополнительные ресурсы и память, для его воссоздания.
+\parТретьей проблемой является то, что результатом должна быть такая же матрица с форматом хранения CCS, поэтому вместе с перемножением мы должны дополнительно записывать позицию элемента в rows и сохранять значения элементов вдоль столбца в ptr.
+\parТеперь, когда мы обозначили проблемы, опишем оптимальный, для нашего случая, алгоритм произведения двух векторов $A$ и $B$:
+
+\begin{enumerate}
+    \item Просматриваются все элементы вектора $A$, размер которого во много раз меньше $N$, так как матрица разрежена. Исходя из его значений заполняется вспомогательный массив $ip$, он хранит в себе индексы позиций ненулевых элементов в векторе $A$ и передать информацию о паре пересекающихся элементов, которые необходимо перемножить и записать в частичную сумму.
+    \item Далее просматривается вектор $B$. Если соответствующий элемент массива $ip$ ненулевой, что означает совпадение позиций элементов в векторах $A$ и $B$, то вычисляется произведение элементов векторов $A$ и $B$, а результат сохраняется в промежуточную сумму. Результат скалярного произведения получается после полного прохода вдоль вектора $B$.
+\end{enumerate}
+Повторяя данную процедуру для каждого элемента, мы получим матрицу формата хранения CCS, являющуюся произведением двух других матриц.
+\newpage
+
+\section*{Описание схемы распараллеливания}
+\addcontentsline{toc}{section}{Описание схемы распараллеливания}
+\parРаспараллеливание программы происходит с помощью распределения данных и вычислительных операций между потоками. Чтобы решить проблему сбора данных и гонки потоков достаточно ввести несколько двумерных массивов в общей памяти под соответствующие характеристики хранения разреженной матрицы и заполнять в соответствующую позицию выходные данные соответствующего потока.
+\parДля того чтобы реализовать параллельное умножение матриц, достаточно распределить поровну вычисления скалярных произведений векторов между всеми имеющимися потоками. Так как произведение векторов происходит вдоль столбца первой матрицы, то мы распределим вычисления, отдав каждому потоку свою часть столбцов над которыми необходимо провести перемножение.
+\parВ OpenMP версии программы столбцы будут распределяться статически компилятором. Это означает, что каждый поток получает несколько подряд идущих столбцов. Далее каждый поток выполнит свою часть вычислений с выделенными ему столбцами. Полученный результат вычислений собирается в общей памяти уже после выполнения всех вычислений каждым потоком и в последствии конвертируется в массивы под соответствующие характеристики хранения разреженной матрицы.
+\parВ TBB реализации столбцы распределяются динамически при помощи планировщика данной библиотеки. Это означает, что каждый поток получит неизвестные номера столбцов. Чтобы обеспечить верность результата запись промежуточных значений в общую память придется делать чаще, после каждого вычисления нового столбца, что увеличит количество итераций до получения конечного результата.
+\parДанные особенности станут очевидны при выполнении практических тестов.
+\newpage
+
+\section*{Описание программной реализации}
+\addcontentsline{toc}{section}{Описание программной реализации}
+Программа состоит из заголовочного файла matrix\_css\_<технология>.h и двух файлов исходного кода matrix\_css\_<технология>.cpp и main.cpp, содержащего тесты проверяющие корректность и эффективность работы программы.
+
+\parПерегрузка операторов:
+\begin{lstlisting}
+SprMatCCS& operator=(const SprMatCCS& mat);
+bool operator==(SprMatCCS mat);
+bool operator!=(const SprMatCCS& mat);
+\end{lstlisting}
+
+\parВспомогательные функции:
+\begin{lstlisting}
+SprMatCCS& randMat(int size, int cnt = -1);
+SprMatCCS& clrMat();
+bool isZero(const double num);
+bool isEqual(double x, double y);
+void SprMatCCS::shwVal();
+\end{lstlisting}
+
+\parТранспонирование матрицы
+\begin{lstlisting}
+SprMatCCS transMat();
+\end{lstlisting}
+\parПоследовательная реализация умножения матриц
+\begin{lstlisting}
+SprMatCCS operator*(SprMatCCS mat);
+\end{lstlisting}
+\parПараллельная реализация умножения матриц
+\begin{lstlisting}
+SprMatCCS ParallelMult(SprMatCCS mat);
+\end{lstlisting}
+\newpage
+
+\section*{Тестирование параллельной программы}
+\addcontentsline{toc}{section}{Тестирование параллельной программы}
+\parЧтобы убедиться в корректности и определить эффективность работы программы, производились тесты на базе платформы Google Tests.
+\parДля оценки эффективности решения проводились тесты на производительность последовательной и параллельной реализаций. Для первого случая размерность матрицы выбрана значением 1000. Во втором случае размерность матрицы выбрана значением 10000. В реализации OpenMP число потоков задавалось равным 8. Grainsize в TBB выбран 1/6 от размера матрицы, как самый оптимальный.
+
+\parТесты были выполнены для следующей конфигурации системы:
+\begin{itemize}
+    \item Процессор: Intel Сore i7-6700 3.40GHz Кол-во ядер: 4, Кол-во потоков: 8
+    \item ОС: Windows 10 Home
+\end{itemize}
+\par
+\begin{table}[!h]
+    \centering
+    \caption{dim = 1000}
+    \vspace{1em}
+    \begin{tabular}{| l | l | l | l |}
+    \hline
+    \scriptsize{Технология} & \scriptsize{Время последовательного решения (сек.)} & \scriptsize{Время параллельного решения (сек.)} & \scriptsize{Эффективность} \\ \hline
+    OMP   &   0.0367494    &   0.0121835 &   3.01633  \\ \hline
+    TBB   &   0.140188   &   0.0578038   &   2.42523  \\ \hline
+    \end{tabular}
+\end{table}
+
+\begin{table}[!h]
+    \centering
+    \caption{dim = 10000}
+    \vspace{1em}
+    \begin{tabular}{| l | l | l | l |}
+    \hline
+    \scriptsize{Технология} & \scriptsize{Время последовательного решения (сек.)} & \scriptsize{Время параллельного решения (сек.)} & \scriptsize{Эффективность} \\ \hline
+    OMP   &   3.29625   &   0.678094   &    4.86105  \\ \hline
+    TBB   &   3.24918    &   0.699332   &   4.64612  \\ \hline
+    \end{tabular}
+\end{table}
+
+\parПроанализировав полученные значения из таблицы 1 можно сделать вывод, что использование технологий распараллеливания, позволяет значительно уменьшить время работы программы. OpenMP реализация показала себя эффективнее на малых размерностях матрицы, чем TBB. Это логически исходит из сложностей вызванных динамического распределения столбцов описанного в схеме распараллеливания. К тому же, так как разреженная матрица задается каждый раз случайно, то заранее определить сколько операций достанется каждому потоку не представляется возможным, поэтому может получиться так, что одному из потоков достанется больше операций, что опять же может повлиять на окончательный результат.
+\parС увеличением размера матрицы из таблицы 2 мы видим, что эффективность работы обеих программ выравнивается. Эффективность работы обоих параллельных алгоритмов c увеличением матрицы заметно увеличивается, в это же время накладные расходы работы планировщика в TBB становятся не так значительны по отношению к общему времени работы программы. Поэтому при больших размерностях матрицы TBB реализация не уступает OpenMP реализации.
+\newpage
+
+\section*{Заключение}
+\addcontentsline{toc}{section}{Заключение}
+\parВ данной лабораторной работе был рассмотрен CCS метод оптимизации хранения разреженных матриц с элементами типа double с соответствующей методу параллельной реализацией операции умножения матриц.
+\parВ ходе работы была написана программная реализация с использованием нескольких подходов к параллельному программированию в системах с общей памятью, а именно технологии OpenMP, библиотеки Intel TBB. Код был протестирован при помощи библиотеки Google Tests, выделены преимущества и недостатки алгоритмов.
+\newpage
+
+\begin{thebibliography}{1}
+\addcontentsline{toc}{section}{Список литературы}
+\subsection*{Источники информации}
+\bibitem{Sisoev}Сысоев А. В., Мееров И. Б., Свистунов А. Н., Курылев А. Л., Сенин А. В., Шишков А. В., Корняков К. В.,
+Сиднев А. А. Параллельное программирование в системах с общей
+памятью. Инструментальная поддержка, Нижний Новгород, 2007.
+\bibitem{Meerov}Мееров И.Б., Сысоев А.В. при участии Сафоновой Я. Разреженное матричное умножение, Нижний Новгород, 2011.
+\subsection*{Ресурсы сети интернет}
+\bibitem{Method}Параллельные заметки – технология OpenMP\newline \url{https://habr.com/ru/company/intel/blog/82486/}
+\bibitem{Method}Использование Intel TBB для создания многопоточных приложений \newline \url{https://habr.com/ru/post/102670/}
+\bibitem{Algorithm}Обработка разреженных матриц \\
+\url{http://wwwcdl.bmstu.ru/iu7/book1/stage6.htm}
+\bibitem{Algorithm}ИНТУИТ Умножение разреженных матриц\\
+\url{https://intuit.ru/studies/courses/4447/983/lecture/14931?page=5}
+\end{thebibliography}
+\newpage
+
+\section*{Приложение}
+\addcontentsline{toc}{section}{Приложение}
+Код лабораторной работы:
+
+\newline
+\textbf{Последовательная версия:}
+
+\newline matrix\_ccs.h
+
+\begin{lstlisting}
+// Copyright 2022 Miheev Ivan
+
+#ifndef MODULES_TASK_1_MIHEEV_I_MULT_MATRIX_CCS_DOUBLE_MATRIX_CCS_H_
+#define MODULES_TASK_1_MIHEEV_I_MULT_MATRIX_CCS_DOUBLE_MATRIX_CCS_H_
+
+#include <random>
+#include <vector>
+#include <iostream>
+
+class SprMatCCS {
+ private:
+  int dim;  // number of matrix dimension
+  int cap;  // number of elements other than zero
+  std::vector<double> val;  // vector that contains values of elements
+  std::vector<int> rows;  // vector that contains position in a column
+  std::vector<int> ptr;  // vector of pointers of positions
+
+ public:
+  SprMatCCS(int _dim = 0, int _cap = 0,
+            const std::vector<double>& _val = std::vector<double>(),
+            const std::vector<int>& _rows = std::vector<int>(),
+            const std::vector<int>& _ptr = std::vector<int>())
+      : dim(_dim), cap(_cap), val(_val), rows(_rows), ptr(_ptr) {}
+  SprMatCCS(const SprMatCCS& mat):
+    dim(mat.dim),
+    cap(mat.cap),
+    val(mat.val),
+    rows(mat.rows),
+    ptr(mat.ptr) {}
+  ~SprMatCCS();
+
+  int getCapacity() { return this->cap; }
+  int getDimension() { return this->dim; }
+  std::vector<double> getValues() { return this->val; }
+  std::vector<int> getRows() { return this->rows; }
+  std::vector<int> getPtr() { return this->ptr; }
+
+  void shwVal(); 
+  SprMatCCS& randMat(int size, int cnt = -1);
+  SprMatCCS& clrMat();  // function to clear Matrix
+  SprMatCCS transMat();
+
+  SprMatCCS& operator=(const SprMatCCS& mat);
+  SprMatCCS operator*(SprMatCCS mat);
+  bool operator==(SprMatCCS mat);
+  bool operator!=(const SprMatCCS& mat) { return !(*this == mat); }
+};
+
+#endif  // MODULES_TASK_1_MIHEEV_I_MULT_MATRIX_CCS_DOUBLE_MATRIX_CCS_H_
+\end{lstlisting}
+
+\newline matrix\_ccs.cpp
+
+\begin{lstlisting}
+// Copyright 2022 Miheev Ivan
+
+#include "../../../modules/task_1/miheev_i_mult_matrix_ccs_double/matrix_ccs.h"
+
+bool isZero(const double num) { return (std::abs(num) < 0.00000001); }
+bool is_equal(double x, double y) { return std::fabs(x - y) < 0.00000001; }
+
+SprMatCCS::~SprMatCCS() {
+  this->val.clear();
+  this->rows.clear();
+  this->ptr.clear();
+}
+
+SprMatCCS& SprMatCCS::randMat(int _dim, int spr) {
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  if (spr <= 0) {
+    spr = _dim * 0.01;
+  }
+
+  this->clrMat();
+  this->dim = _dim;
+  this->cap = spr * _dim;
+  this->val.resize(spr * _dim);
+  this->rows.resize(spr * _dim);
+  this->ptr.resize(_dim + 1);
+
+  for (int i = 0; i < _dim; i++) {
+    for (int j = 0; j < spr; j++) {
+      bool b;
+      do {
+        this->rows[i * spr + j] = gen() % _dim + 1;
+        b = false;
+        for (int k = 0; k < j; k++) {
+          if (this->rows[i * spr + j] == this->rows[i * spr + k]) {
+            b = true;
+          }
+        }
+      } while (b);
+    }
+
+    for (int j = 0; j < spr - 1; j++) {
+      for (int k = 0; k < spr - 1; k++) {
+        if (this->rows[i * spr + k] > this->rows[i * spr + k]) {
+          int tmp = this->rows[i * spr + k];
+          this->rows[i * spr + k] = this->rows[i * spr + k + 1];
+          this->rows[i * spr + k] = tmp;
+        }
+      }
+    }
+  }
+
+  int rng = 100;  // upper bound of values
+  for (int i = 0; i < spr * _dim; i++) {
+    this->val[i] = gen() % rng;
+  }
+
+  int sum = 1;
+  for (int i = 0; i < _dim + 1; i++) {
+    this->ptr[i] = sum;
+    sum += spr;
+  }
+
+  return *this;
+}
+SprMatCCS& SprMatCCS::clrMat() {
+  this->cap = 0;
+  this->dim = 0;
+  this->val.clear();
+  this->rows.clear();
+  this->ptr.clear();
+
+  return *this;
+}
+SprMatCCS SprMatCCS::transMat() {
+  SprMatCCS res;
+  res.cap = this->cap;
+  res.dim = this->dim;
+  res.val.resize(this->cap);
+  res.rows.resize(this->cap);
+  res.ptr.resize(this->dim + 1);
+
+  for (int i = 0; i < this->cap; i++) {
+    res.ptr[this->rows[i] - 1]++;
+  }
+
+  int sum = 1;
+  for (int i = 0; i < this->dim + 1; i++) {
+    int tmp = res.ptr[i];
+    res.ptr[i] = sum;
+    sum += tmp;
+  }
+  std::vector<int> _ptr = res.ptr;
+  for (int i = 0; i < this->dim; i++) {
+    for (int j = this->ptr[i]; j < this->ptr[i + 1]; j++) {
+      int r_ind = this->rows[j - 1];
+      int i_ind = _ptr[r_ind - 1];
+      res.rows[i_ind - 1] = i+1;
+      res.val[i_ind - 1] = this->val[j - 1];
+      _ptr[r_ind - 1]++;
+    }
+  }
+  return res;
+}
+
+SprMatCCS& SprMatCCS::operator=(const SprMatCCS& mat) {
+  this->cap = mat.cap;
+  this->dim = mat.dim;
+  this->val = mat.val;
+  this->rows = mat.rows;
+  this->ptr = mat.ptr;
+
+  return *this;
+}
+SprMatCCS SprMatCCS::operator*(SprMatCCS mat) {
+  if (this->dim != mat.dim) throw "wrong size";
+  SprMatCCS trans = this->transMat();
+
+  std::vector<double> val_res;
+  std::vector<int> rows_res;
+  std::vector<int> ptr_res {1};
+
+  int capacity = 1;
+  for (int j = 0; j < mat.dim; j++) {
+    std::vector<int> ip(trans.dim, 0);
+    for (int i = mat.ptr[j]; i < mat.ptr[j + 1]; i++) {
+      ip[mat.rows[i - 1] - 1] = i;
+    }
+    for (int i = 0; i < trans.dim; i++) {
+      double sum = 0;
+      for (int k = trans.ptr[i]; k < trans.ptr[i + 1]; k++) {
+        int p = ip[trans.rows[k - 1] - 1];
+        if (p) {
+          sum += mat.val[p - 1] * trans.val[k - 1];
+        }
+      }
+      if (!isZero(sum)) {
+        rows_res.push_back(i + 1);
+        val_res.push_back(sum);
+        capacity++;
+      }
+    }
+    ptr_res.push_back(capacity);
+  }
+  SprMatCCS res(trans.dim, capacity - 1, val_res, rows_res, ptr_res);
+  return res;
+}
+
+bool SprMatCCS::operator==(SprMatCCS mat) {
+  if (this->dim != mat.dim ||
+    this->cap != mat.cap ||
+    this->rows != mat.rows ||
+    this->ptr != mat.ptr)
+    return false;
+  for (int i = 0; i < this->cap; i++)
+    if (!is_equal(val[i], mat.val[i]))
+      return false;
+  return true;
+}
+
+void SprMatCCS::shwVal() {
+  for (int i = 0; i < this->cap; i++) {
+    std::cout << val[i] << " ";
+  }
+  std::cout << "\n";
+  for (int i = 0; i < this->cap; i++) {
+    std::cout << rows[i] << " ";
+  }
+  std::cout << "\n";
+  for (int i = 0; i < static_cast<int>(ptr.size()); i++) {
+    std::cout << ptr[i] << " ";
+  }
+  std::cout << "\n";
+}
+\end{lstlisting}
+
+\newpage
+\textbf{OpenMP версия}
+\newline
+\newline matrix\_ccs\_omp.h
+
+\begin{lstlisting}
+// Copyright 2022 Miheev Ivan
+
+#ifndef MODULES_TASK_2_MIHEEV_I_MULT_MATRIX_CCS_DOUBLE_OMP_MATRIX_CCS_OMP_H_
+#define MODULES_TASK_2_MIHEEV_I_MULT_MATRIX_CCS_DOUBLE_OMP_MATRIX_CCS_OMP_H_
+
+#include <iostream>
+#include <random>
+#include <vector>
+
+class SprMatCCS {
+ private:
+  int dim;                  // number of matrix dimension
+  int cap;                  // number of elements other than zero
+  std::vector<double> val;  // vector that contains values of elements
+  std::vector<int> rows;    // vector that contains position in a column
+  std::vector<int> ptr;     // vector of pointers of positions
+
+ public:
+  SprMatCCS(int _dim = 0, int _cap = 0,
+            const std::vector<double>& _val = std::vector<double>(),
+            const std::vector<int>& _rows = std::vector<int>(),
+            const std::vector<int>& _ptr = std::vector<int>())
+      : dim(_dim), cap(_cap), val(_val), rows(_rows), ptr(_ptr) {}
+  SprMatCCS(const SprMatCCS& mat)
+      : dim(mat.dim),
+        cap(mat.cap),
+        val(mat.val),
+        rows(mat.rows),
+        ptr(mat.ptr) {}
+  ~SprMatCCS();
+
+  int getCapacity() { return this->cap; }
+  int getDimension() { return this->dim; }
+
+  std::vector<double> getValues() { return this->val; }
+  std::vector<int> getRows() { return this->rows; }
+  std::vector<int> getPtr() { return this->ptr; }
+
+  SprMatCCS& randMat(int size, int cnt = -1);
+  SprMatCCS& clrMat();  // function to clear Matrix
+  SprMatCCS transMat();
+
+  SprMatCCS& operator=(const SprMatCCS& mat);
+  SprMatCCS operator*(SprMatCCS mat);
+  bool operator==(SprMatCCS mat);
+  bool operator!=(const SprMatCCS& mat) { return !(*this == mat); }
+
+  SprMatCCS ParallelMult(SprMatCCS mat);
+
+  void shwVal();
+};
+
+#endif  // MODULES_TASK_2_MIHEEV_I_MULT_MATRIX_CCS_DOUBLE_OMP_MATRIX_CCS_OMP_H_
+\end{lstlisting}
+
+\newline matrix\_ccs\_omp.cpp
+
+\begin{lstlisting}
+// Copyright 2022 Miheev Ivan
+
+#include "../../../modules/task_2/miheev_i_mult_matrix_ccs_double_omp/matrix_ccs_omp.h"
+
+#include <omp.h>
+
+bool isZero(const double num) { return std::abs(num) < 0.00000001; }
+bool isEqual(double x, double y) { return std::fabs(x - y) < 0.00000001; }
+
+SprMatCCS::~SprMatCCS() {
+  this->val.clear();
+  this->rows.clear();
+  this->ptr.clear();
+}
+
+SprMatCCS& SprMatCCS::randMat(int _dim, int spr) {
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  if (spr <= 0) {
+    spr = 1;
+  }
+
+  this->clrMat();
+  this->dim = _dim;
+  this->cap = spr * _dim;
+  this->val.resize(spr * _dim);
+  this->rows.resize(spr * _dim);
+  this->ptr.resize(_dim + 1);
+
+  for (int i = 0; i < _dim; i++) {
+    for (int j = 0; j < spr; j++) {
+      bool b;
+      do {
+        this->rows[i * spr + j] = gen() % _dim + 1;
+        b = false;
+        for (int k = 0; k < j; k++) {
+          if (this->rows[i * spr + j] == this->rows[i * spr + k]) {
+            b = true;
+          }
+        }
+      } while (b);
+    }
+
+    for (int k = 0; k < spr - 1; k++) {
+      if (this->rows[i * spr + k] > this->rows[i * spr + k + 1]) {
+        int tmp = this->rows[i * spr + k];
+        this->rows[i * spr + k] = this->rows[i * spr + k + 1];
+        this->rows[i * spr + k + 1] = tmp;
+      }
+    }
+  }
+
+  int rng = 100;  // upper bound of values
+  for (int i = 0; i < spr * _dim; i++) {
+    this->val[i] = gen() % rng;
+  }
+
+  int sum = 1;
+  for (int i = 0; i < _dim + 1; i++) {
+    this->ptr[i] = sum;
+    sum += spr;
+  }
+
+  return *this;
+}
+SprMatCCS& SprMatCCS::clrMat() {
+  this->cap = 0;
+  this->dim = 0;
+  this->val.clear();
+  this->rows.clear();
+  this->ptr.clear();
+
+  return *this;
+}
+SprMatCCS SprMatCCS::transMat() {
+  SprMatCCS res;
+  res.dim = this->dim;
+  res.cap = this->cap;
+  res.val.resize(this->cap);
+  res.rows.resize(this->cap);
+  res.ptr.resize(this->dim + 1);
+
+  for (int i = 0; i < this->cap; i++) {
+    res.ptr[this->rows[i] - 1]++;
+  }
+
+  int tmp, sum = 1;
+  for (int i = 0; i < this->dim + 1; i++) {
+    tmp = res.ptr[i];
+    res.ptr[i] = sum;
+    sum += tmp;
+  }
+  std::vector<int> _ptr = res.ptr;
+  for (int i = 0; i < this->dim; i++) {
+    for (int j = this->ptr[i]; j < this->ptr[i + 1]; j++) {
+      int r_ind = this->rows[j - 1];
+      int i_ind = _ptr[r_ind - 1];
+      res.rows[i_ind - 1] = i + 1;
+      res.val[i_ind - 1] = this->val[j - 1];
+      _ptr[r_ind - 1]++;
+    }
+  }
+  return res;
+}
+
+SprMatCCS& SprMatCCS::operator=(const SprMatCCS& mat) {
+  this->cap = mat.cap;
+  this->dim = mat.dim;
+  this->val = mat.val;
+  this->rows = mat.rows;
+  this->ptr = mat.ptr;
+
+  return *this;
+}
+bool SprMatCCS::operator==(SprMatCCS mat) {
+  if (this->dim != mat.dim || this->cap != mat.cap || this->rows != mat.rows ||
+      this->ptr != mat.ptr)
+    return false;
+  for (int i = 0; i < this->cap; i++)
+    if (!isEqual(val[i], mat.val[i])) return false;
+  return true;
+}
+SprMatCCS SprMatCCS::operator*(SprMatCCS mat) {
+  if (this->dim != mat.dim) throw "wrong sizes";
+  SprMatCCS trans = this->transMat();
+
+  std::vector<double> val_res;
+  std::vector<int> rows_res;
+  std::vector<int> ptr_res{1};
+
+  int capacity = 1;
+  double sum;
+  for (int i = 0; i < mat.dim; i++) {
+    std::vector<int> ip(trans.dim, 0);
+    for (int j = mat.ptr[i]; j < mat.ptr[i + 1]; j++) {
+      ip[mat.rows[j - 1] - 1] = j;
+    }
+    for (int j = 0; j < trans.dim; j++) {
+      sum = 0;
+      for (int k = trans.ptr[j]; k < trans.ptr[j + 1]; k++) {
+        int p = ip[trans.rows[k - 1] - 1];
+        if (p) {
+          sum += mat.val[p - 1] * trans.val[k - 1];
+        }
+      }
+      if (!isZero(sum)) {
+        rows_res.push_back(j + 1);
+        val_res.push_back(sum);
+        capacity++;
+      }
+    }
+    ptr_res.push_back(capacity);
+  }
+  SprMatCCS res(trans.dim, capacity - 1, val_res, rows_res, ptr_res);
+  return res;
+}
+
+SprMatCCS SprMatCCS::ParallelMult(SprMatCCS mat) {
+  if (this->dim != mat.dim) throw "wrong sizes";
+  SprMatCCS trans = this->transMat();
+
+  const int num_threads = 7;
+
+  std::vector<std::vector<double>> val_shared(num_threads);
+  std::vector<std::vector<int>> rows_shared(num_threads);
+  std::vector<int> ptr_counter(trans.dim);
+
+#pragma omp parallel num_threads(num_threads)
+  {
+    int ind = omp_get_thread_num();
+
+#pragma omp for
+    for (int i = 0; i < trans.dim; i++) {
+      std::vector<int> ip(trans.dim, 0);
+      int cnt = 0;
+      for (int j = mat.ptr[i]; j < mat.ptr[i + 1]; j++) {
+        ip[mat.rows[j - 1] - 1] = j;
+      }
+      for (int j = 0; j < trans.dim; j++) {
+        double sum = 0;
+        for (int k = trans.ptr[j]; k < trans.ptr[j + 1]; k++) {
+          int irow = trans.rows[k - 1];
+          int p = ip[irow - 1];
+          if (p) {
+            sum += mat.val[p - 1] * trans.val[k - 1];
+          }
+        }
+        if (!isZero(sum)) {
+          val_shared[ind].push_back(sum);
+          rows_shared[ind].push_back(j + 1);
+          cnt++;
+        }
+      }
+      ptr_counter[i] += cnt;
+    }
+  }
+
+  std::vector<double> val_res;
+  std::vector<int> row_res;
+  std::vector<int> ptr_res{1};
+
+  for (int i = 0; i < num_threads; i++) {
+    val_res.insert(val_res.end(), val_shared[i].begin(), val_shared[i].end());
+    row_res.insert(row_res.end(), rows_shared[i].begin(), rows_shared[i].end());
+  }
+  int sum = 1;
+  for (int i = 0; i < trans.dim; i++) {
+    sum += ptr_counter[i];
+    ptr_res.push_back(sum);
+  }
+
+  SprMatCCS res(trans.dim, val_res.size(), val_res, row_res, ptr_res);
+  return res;
+}
+
+void SprMatCCS::shwVal() {
+  for (int i = 0; i < this->cap; i++) {
+    std::cout << val[i] << " ";
+  }
+  std::cout << "\n";
+  for (int i = 0; i < this->cap; i++) {
+    std::cout << rows[i] << " ";
+  }
+  std::cout << "\n";
+  for (int i = 0; i < static_cast<int>(ptr.size()); i++) {
+    std::cout << ptr[i] << " ";
+  }
+  std::cout << "\n";
+}
+\end{lstlisting}
+
+\newpage
+\textbf{TBB версия}
+\newline
+\newline matrix\_ccs\_tbb.h
+
+\begin{lstlisting}
+// Copyright 2022 Miheev Ivan
+
+#ifndef MODULES_TASK_3_MIHEEV_I_MULT_MATRIX_CCS_DOUBLE_MATRIX_CCS_TBB_H_
+#define MODULES_TASK_3_MIHEEV_I_MULT_MATRIX_CCS_DOUBLE_MATRIX_CCS_TBB_H_
+
+#include <tbb/tbb.h>
+
+#include <iostream>
+#include <random>
+#include <vector>
+
+class SprMatCCS {
+ private:
+  int dim;                  // number of matrix dimension
+  int cap;                  // number of elements other than zero
+  std::vector<double> val;  // vector that contains values of elements
+  std::vector<int> rows;    // vector that contains position in a column
+  std::vector<int> ptr;     // vector of pointers of positions
+
+ public:
+  SprMatCCS(int _dim = 0, int _cap = 0,
+            const std::vector<double>& _val = std::vector<double>(),
+            const std::vector<int>& _rows = std::vector<int>(),
+            const std::vector<int>& _ptr = std::vector<int>())
+      : dim(_dim), cap(_cap), val(_val), rows(_rows), ptr(_ptr) {}
+  SprMatCCS(const SprMatCCS& mat)
+      : dim(mat.dim),
+        cap(mat.cap),
+        val(mat.val),
+        rows(mat.rows),
+        ptr(mat.ptr) {}
+  ~SprMatCCS();
+
+  int getCapacity() { return this->cap; }
+  int getDimension() { return this->dim; }
+
+  std::vector<double> getValues() { return this->val; }
+  std::vector<int> getRows() { return this->rows; }
+  std::vector<int> getPtr() { return this->ptr; }
+
+  SprMatCCS& randMat(int size, int cnt = -1);
+  SprMatCCS& clrMat();  // function to clear matrix
+  SprMatCCS transMat();
+
+  SprMatCCS& operator=(const SprMatCCS& mat);
+  SprMatCCS operator*(SprMatCCS mat);
+  bool operator==(SprMatCCS mat);
+  bool operator!=(const SprMatCCS& mat) { return !(*this == mat); }
+
+  SprMatCCS ParallelMult(SprMatCCS mat);
+
+  void shwVal();
+};
+
+#endif  // MODULES_TASK_3_MIHEEV_I_MULT_MATRIX_CCS_DOUBLE_MATRIX_CCS_TBB_H_
+\end{lstlisting}
+
+\newline matrix\_ccs\_tbb.cpp
+
+\begin{lstlisting}
+// Copyright 2022 Miheev Ivan
+
+#include "../../../modules/task_3/miheev_i_mult_matrix_ccs_double/matrix_ccs_tbb.h"
+
+bool isZero(const double num) { return std::abs(num) < 0.00000001; }
+bool isEqual(double x, double y) { return std::fabs(x - y) < 0.00000001; }
+inline int Grain(int x) {
+  if (x)
+    return x;
+  else
+    return 1;
+}
+
+SprMatCCS::~SprMatCCS() {
+  this->val.clear();
+  this->rows.clear();
+  this->ptr.clear();
+}
+
+SprMatCCS& SprMatCCS::randMat(int _dim, int spr) {
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  if (spr <= 0) {
+    spr = 1;
+  }
+
+  this->clrMat();
+  this->dim = _dim;
+  this->cap = spr * _dim;
+  this->val.resize(spr * _dim);
+  this->rows.resize(spr * _dim);
+  this->ptr.resize(_dim + 1);
+
+  for (int i = 0; i < _dim; i++) {
+    for (int j = 0; j < spr; j++) {
+      bool b;
+      do {
+        this->rows[i * spr + j] = gen() % _dim + 1;
+        b = false;
+        for (int k = 0; k < j; k++) {
+          if (this->rows[i * spr + j] == this->rows[i * spr + k]) {
+            b = true;
+          }
+        }
+      } while (b);
+    }
+
+    for (int k = 0; k < spr - 1; k++) {
+      if (this->rows[i * spr + k] > this->rows[i * spr + k + 1]) {
+        int tmp = this->rows[i * spr + k];
+        this->rows[i * spr + k] = this->rows[i * spr + k + 1];
+        this->rows[i * spr + k + 1] = tmp;
+      }
+    }
+  }
+
+  int rng = 100;  // upper bound of values
+  for (int i = 0; i < spr * _dim; i++) {
+    this->val[i] = gen() % rng;
+  }
+
+  int sum = 1;
+  for (int i = 0; i < _dim + 1; i++) {
+    this->ptr[i] = sum;
+    sum += spr;
+  }
+
+  return *this;
+}
+SprMatCCS& SprMatCCS::clrMat() {
+  this->cap = 0;
+  this->dim = 0;
+  this->val.clear();
+  this->rows.clear();
+  this->ptr.clear();
+
+  return *this;
+}
+SprMatCCS SprMatCCS::transMat() {
+  SprMatCCS res;
+  res.dim = this->dim;
+  res.cap = this->cap;
+  res.val.resize(this->cap);
+  res.rows.resize(this->cap);
+  res.ptr.resize(this->dim + 1);
+
+  for (int i = 0; i < this->cap; i++) {
+    res.ptr[this->rows[i] - 1]++;
+  }
+
+  int tmp, sum = 1;
+  for (int i = 0; i < this->dim + 1; i++) {
+    tmp = res.ptr[i];
+    res.ptr[i] = sum;
+    sum += tmp;
+  }
+  std::vector<int> _ptr = res.ptr;
+  for (int i = 0; i < this->dim; i++) {
+    for (int j = this->ptr[i]; j < this->ptr[i + 1]; j++) {
+      int r_ind = this->rows[j - 1];
+      int i_ind = _ptr[r_ind - 1];
+      res.rows[i_ind - 1] = i + 1;
+      res.val[i_ind - 1] = this->val[j - 1];
+      _ptr[r_ind - 1]++;
+    }
+  }
+  return res;
+}
+
+SprMatCCS& SprMatCCS::operator=(const SprMatCCS& mat) {
+  this->cap = mat.cap;
+  this->dim = mat.dim;
+  this->val = mat.val;
+  this->rows = mat.rows;
+  this->ptr = mat.ptr;
+
+  return *this;
+}
+bool SprMatCCS::operator==(SprMatCCS mat) {
+  if (this->dim != mat.dim || this->cap != mat.cap || this->rows != mat.rows ||
+      this->ptr != mat.ptr)
+    return false;
+  for (int i = 0; i < this->cap; i++)
+    if (!isEqual(val[i], mat.val[i])) return false;
+  return true;
+}
+SprMatCCS SprMatCCS::operator*(SprMatCCS mat) {
+  if (this->dim != mat.dim) throw "wrong sizes";
+  SprMatCCS trans = this->transMat();
+
+  std::vector<double> val_res;
+  std::vector<int> rows_res;
+  std::vector<int> ptr_res{1};
+
+  int capacity = 1;
+  double sum;
+  for (int i = 0; i < mat.dim; i++) {
+    std::vector<int> ip(trans.dim, 0);
+    for (int j = mat.ptr[i]; j < mat.ptr[i + 1]; j++) {
+      ip[mat.rows[j - 1] - 1] = j;
+    }
+    for (int j = 0; j < trans.dim; j++) {
+      sum = 0;
+      for (int k = trans.ptr[j]; k < trans.ptr[j + 1]; k++) {
+        int p = ip[trans.rows[k - 1] - 1];
+        if (p) {
+          sum += mat.val[p - 1] * trans.val[k - 1];
+        }
+      }
+      if (!isZero(sum)) {
+        rows_res.push_back(j + 1);
+        val_res.push_back(sum);
+        capacity++;
+      }
+    }
+    ptr_res.push_back(capacity);
+  }
+  SprMatCCS res(trans.dim, capacity - 1, val_res, rows_res, ptr_res);
+  return res;
+}
+
+SprMatCCS SprMatCCS::ParallelMult(SprMatCCS mat) {
+  if (this->dim != mat.dim) throw "wrong sizes";
+  SprMatCCS trans = this->transMat();
+
+  //std::vector<std::vector<double>> val(trans.dim);
+  //std::vector<std::vector<int>> rows(trans.dim);
+  //std::vector<int> ptr_counter(trans.dim);
+
+  tbb::concurrent_vector<tbb::concurrent_vector<double>> val_tdd(trans.dim);
+  tbb::concurrent_vector<tbb::concurrent_vector<int>> rows_tdd(trans.dim);
+  tbb::concurrent_vector<int> ptr_counter(trans.dim);
+  const int grainsize = mat.dim / 6;
+
+  parallel_for(tbb::blocked_range<int>(0, mat.dim, Grain(grainsize)),
+               [&](const tbb::blocked_range<int>& rg) {
+                 for (int j = rg.begin(); j < rg.end(); j++) {
+                   std::vector<int> ip(trans.dim, 0);
+                   int ctr = 0;
+                   for (int i = mat.ptr[j]; i < mat.ptr[j + 1]; i++) {
+                     ip[mat.rows[i - 1] - 1] = i;
+                   }
+                   for (int i = 0; i < trans.dim; i++) {
+                     double sum = 0;
+                     for (int k = trans.ptr[i]; k < trans.ptr[i + 1]; k++) {
+                       int irow = trans.rows[k - 1];
+                       int p = ip[irow - 1];
+                       if (p) {
+                         sum += mat.val[p - 1] * trans.val[k - 1];
+                       }
+                     }
+                     if (!isZero(sum)) {
+                       val_tdd[j].push_back(sum);
+                       rows_tdd[j].push_back(i + 1);
+                       ctr++;
+                     }
+                   }
+                   ptr_counter[j] += ctr;
+                 }
+               });
+
+  std::vector<double> val_res;
+  std::vector<int> rows_res;
+  std::vector<int> ptr_res{1};
+  int sum = 1;
+  for (int i = 0; i < trans.dim; i++) {
+    sum += ptr_counter[i];
+    ptr_res.push_back(sum);
+    val_res.insert(val_res.end(), val_tdd[i].begin(), val_tdd[i].end());
+    rows_res.insert(rows_res.end(), rows_tdd[i].begin(), rows_tdd[i].end());
+  }
+  SprMatCCS res(trans.dim, static_cast<int>(val_res.size()), val_res, rows_res,
+                ptr_res);
+  return res;
+}
+
+void SprMatCCS::shwVal() {
+  for (int i = 0; i < this->cap; i++) {
+    std::cout << val[i] << " ";
+  }
+  std::cout << "\n";
+  for (int i = 0; i < this->cap; i++) {
+    std::cout << rows[i] << " ";
+  }
+  std::cout << "\n";
+  for (int i = 0; i < static_cast<int>(ptr.size()); i++) {
+    std::cout << ptr[i] << " ";
+  }
+  std::cout << "\n";
+}
+
+\end{lstlisting}
+
+\newpage
+\newline main.cpp
+
+\begin{lstlisting}
+// Copyright 2022 Miheev Ivan
+
+#include <gtest/gtest.h>
+#include <time.h>
+#include <omp.h>
+
+#include <vector>
+
+#include "../../../modules/task_3/miheev_i_mult_matrix_ccs_double/matrix_ccs_tbb.h"
+
+TEST(SprMatCCS_Test, Sparse_matrix_multiplication_perf2000) {
+  double start, end;
+  double seq_time, omp_time;
+  int dim = 2000;
+  int spr = 1;
+
+  SprMatCCS A;
+  A.randMat(dim, spr);
+  SprMatCCS B;
+  B.randMat(dim, spr);
+
+  start = omp_get_wtime();
+  SprMatCCS C_seq = A * B;
+  end = omp_get_wtime();
+  std::cout << "SEQ time: " << end - start << " sec" << std::endl;
+  seq_time = end - start;
+
+  start = omp_get_wtime();
+  SprMatCCS C_omp = A.ParallelMult(B);
+  end = omp_get_wtime();
+  std::cout << "OMP time: " << end - start << " sec" << std::endl;
+  omp_time = end - start;
+
+  std::cout << "Performance improvement is " << seq_time / omp_time
+            << std::endl;
+
+  EXPECT_TRUE(C_seq == C_omp);
+}
+
+TEST(SprMatCCS_Test, Sparse_matrix_multiplication_perf10000) {
+  double start, end;
+  double seq_time, omp_time;
+  int dim = 10000;
+  int spr = 1;
+
+  SprMatCCS A;
+  A.randMat(dim, spr);
+  SprMatCCS B;
+  B.randMat(dim, spr);
+
+  start = omp_get_wtime();
+  SprMatCCS C_seq = A * B;
+  end = omp_get_wtime();
+  std::cout << "SEQ time: " << end - start << " sec" << std::endl;
+  seq_time = end - start;
+
+  start = omp_get_wtime();
+  SprMatCCS C_omp = A.ParallelMult(B);
+  end = omp_get_wtime();
+  std::cout << "OMP time: " << end - start << " sec" << std::endl;
+  omp_time = end - start;
+
+  std::cout << "Performance improvement is " << seq_time / omp_time
+            << std::endl;
+
+  EXPECT_TRUE(C_seq == C_omp);
+}
+\end{lstlisting}
+
+\end{document}
